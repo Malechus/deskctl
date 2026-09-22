@@ -1,0 +1,10 @@
+[Unit]
+Description=Periodically change wallpaper via deskctl
+
+[Timer]
+# Change wallpaper every 30 minutes. Adjust as you like, e.g. "1h", "15min".
+OnBootSec=5min
+OnUnitActiveSec=30min
+
+[Install]
+WantedBy=timers.target

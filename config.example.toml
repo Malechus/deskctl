@@ -1,0 +1,62 @@
+# Example deskctl config.
+#
+# You can generate a starter file like this one automatically:
+#   deskctl --genconfig                   # writes to $XDG_CONFIG_HOME/deskctl/config.toml
+#   deskctl --genconfig=/custom/path.toml # writes to a custom path instead
+#
+# Or copy this file yourself to $XDG_CONFIG_HOME/deskctl/config.toml
+# (usually ~/.config/deskctl/config.toml) and edit it.
+
+# Named xrandr display profiles. Each key becomes a name you pass to
+# `deskctl display apply <name>`. The "args" list is exactly what you'd type
+# after `xrandr` on the command line - run `deskctl display list` (or
+# `xrandr --query`) first to see your actual output names (e.g. eDP-1,
+# HDMI-1, DP-1).
+[displays.laptop-only]
+args = ["--output", "eDP-1", "--auto", "--output", "HDMI-1", "--off"]
+
+[displays.docked]
+args = [
+  "--output", "eDP-1", "--off",
+  "--output", "HDMI-1", "--primary", "--mode", "1920x1080", "--pos", "0x0",
+]
+
+# Wallpaper profiles, grouped by the NUMBER OF CURRENTLY CONNECTED SCREENS
+# (as reported by `xrandr --query`). Each [[wallpapers.N]] block is one named
+# profile with an explicit, ordered list of image paths - one per screen, in
+# the same order xrandr reports connected outputs (check with
+# `deskctl display list`).
+#
+# `deskctl wallpaper next` cycles through the profiles for your current
+# screen count IN THE ORDER THEY APPEAR BELOW, wrapping back to the first
+# after the last one - never randomly. `deskctl wallpaper apply <name>` jumps
+# straight to a specific one.
+#
+# Example: two screens connected
+[[wallpapers.2]]
+name = "nature"
+images = [
+  "/home/malechus/Pictures/Wallpapers/nature/001.jpg",
+  "/home/malechus/Pictures/Wallpapers/nature/002.jpg",
+]
+# Optional: shown as the icon in the desktop notification when this profile
+# is applied. Omit this line entirely (as the "dark" profile below does) to
+# send the notification without an image.
+notification_image = "/home/malechus/Pictures/Wallpapers/nature/001.jpg"
+
+[[wallpapers.2]]
+name = "dark"
+images = [
+  "/home/malechus/Pictures/Wallpapers/dark/001.jpg",
+  "/home/malechus/Pictures/Wallpapers/dark/002.jpg",
+]
+
+# Example: four screens connected
+[[wallpapers.4]]
+name = "pinup"
+images = [
+  "/home/malechus/Pictures/Wallpapers/horizontal/044.png",
+  "/home/malechus/Pictures/Wallpapers/vertical/076.png",
+  "/home/malechus/Pictures/Wallpapers/horizontal/033.png",
+  "/home/malechus/Pictures/Wallpapers/vertical/078.png",
+]

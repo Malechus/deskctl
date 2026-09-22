@@ -1,0 +1,6 @@
+[Unit]
+Description=deskctl - change wallpaper
+
+[Service]
+Type=oneshot
+ExecStart=%h/.cargo/bin/deskctl wallpaper next
