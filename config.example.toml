@@ -60,3 +60,10 @@ images = [
   "/home/malechus/Pictures/Wallpapers/horizontal/033.png",
   "/home/malechus/Pictures/Wallpapers/vertical/078.png",
 ]
+
+# Settings for the systemd timer installed by `deskctl --enable`. This whole
+# section - or just the "interval" line - can be omitted entirely, in which
+# case it defaults to "2h". Uses systemd time span syntax, e.g. "30min",
+# "1h", "1h30min".
+[timer]
+interval = "2h"

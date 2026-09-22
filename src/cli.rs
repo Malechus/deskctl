@@ -42,6 +42,22 @@ pub struct Cli {
     #[arg(long, requires = "genconfig")]
     pub wallpaper_dir: Option<String>,
 
+    /// Install deskctl's systemd user units (service + timer) to
+    /// `$XDG_CONFIG_HOME/systemd/user` and enable+start the timer, then
+    /// exit. Equivalent to manually copying the files from `systemd/` and
+    /// running `systemctl --user daemon-reload && systemctl --user enable
+    /// --now deskctl-wallpaper.timer` yourself. The timer's interval comes
+    /// from `[timer].interval` in your config file (default: "2h" if the
+    /// config, or just that field, is missing).
+    ///
+    /// LEARNING NOTE: unlike `--genconfig`, this is a plain boolean flag
+    /// (`bool` rather than `Option<String>`) since it never takes a value -
+    /// it's either present (`true`) or absent (`false`). clap maps
+    /// `#[arg(long)]` on a `bool` field to this "switch" behavior
+    /// automatically.
+    #[arg(long)]
+    pub enable: bool,
+
     /// The subcommand to run (wallpaper, display, ...). Optional so that
     /// `deskctl --genconfig` works without also requiring a subcommand.
     #[command(subcommand)]

@@ -39,6 +39,52 @@ pub struct Config {
     /// picks randomly.
     #[serde(default)]
     pub wallpapers: BTreeMap<String, Vec<WallpaperProfile>>,
+
+    /// Settings for the systemd timer that `deskctl --enable` installs.
+    ///
+    /// LEARNING NOTE: `#[serde(default)]` here means the entire `[timer]`
+    /// table may be omitted from the config file, in which case serde fills
+    /// this field in using `TimerConfig::default()` (below) rather than
+    /// failing to parse. This is how existing config files written before
+    /// this field existed keep loading without any changes.
+    #[serde(default)]
+    pub timer: TimerConfig,
+}
+
+/// Settings for the systemd timer that `deskctl --enable` installs.
+#[derive(Deserialize, Serialize, Debug)]
+pub struct TimerConfig {
+    /// How often the wallpaper timer fires, in systemd time span syntax
+    /// (e.g. "30min", "2h", "1h30min") - this becomes the `OnUnitActiveSec=`
+    /// value in the generated `deskctl-wallpaper.timer` unit.
+    ///
+    /// LEARNING NOTE: `#[serde(default = "default_timer_interval")]` on this
+    /// field (rather than just `#[serde(default)]`) tells serde to call our
+    /// own function to produce the default, instead of `String::default()`
+    /// (which would just be `""`). This is what makes an *explicit*
+    /// `[timer]` table with `interval` simply missing also fall back to
+    /// "2h", not just an entirely absent `[timer]` table.
+    #[serde(default = "default_timer_interval")]
+    pub interval: String,
+}
+
+/// The default timer interval used both when generating a new config
+/// (`--genconfig`) and when an existing config's `[timer]` table (or the
+/// `interval` field within it) is missing.
+pub fn default_timer_interval() -> String {
+    "2h".to_string()
+}
+
+/// LEARNING NOTE: serde's `#[serde(default)]` on the `Config::timer` field
+/// (above) requires `TimerConfig: Default` - implementing it by hand (rather
+/// than `#[derive(Default)]`) lets us reuse `default_timer_interval()` so
+/// there's exactly one place "2h" is written down.
+impl Default for TimerConfig {
+    fn default() -> Self {
+        Self {
+            interval: default_timer_interval(),
+        }
+    }
 }
 
 /// A single named xrandr profile: a list of raw arguments to pass to xrandr.
@@ -196,6 +242,7 @@ fn build_config(wallpaper_dir: Option<&Path>) -> Result<Config> {
     Ok(Config {
         displays,
         wallpapers,
+        timer: TimerConfig::default(),
     })
 }
 

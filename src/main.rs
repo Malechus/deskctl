@@ -11,6 +11,7 @@ mod cli;
 mod config;
 mod display;
 mod state;
+mod systemd;
 mod wallpaper;
 
 use anyhow::{Context, Result};
@@ -45,6 +46,34 @@ fn main() -> Result<()> {
         let wallpaper_dir = cli.wallpaper_dir.as_deref().map(std::path::Path::new);
         let path = config::generate(explicit, wallpaper_dir)?;
         println!("generated config file at {}", path.display());
+        return Ok(());
+    }
+
+    // Handle `--enable` next, also returning immediately. Unlike
+    // `--genconfig`, this *does* try to read the config file - so the
+    // installed timer picks up your `[timer].interval` setting - but it
+    // tolerates a missing/unparsable config by falling back to the same
+    // "2h" default `TimerConfig` uses, rather than failing outright. That
+    // way `deskctl --enable` still works standalone (e.g. before you've run
+    // `--genconfig` at all).
+    if cli.enable {
+        let interval = match config::Config::load(cli.config.as_deref()) {
+            Ok(config) => config.timer.interval,
+            Err(err) => {
+                log::warn!(
+                    "could not load config ({err:#}), using default timer interval of {}",
+                    config::default_timer_interval()
+                );
+                config::default_timer_interval()
+            }
+        };
+
+        let unit_dir = systemd::enable(&interval)?;
+        println!(
+            "installed and enabled systemd units in {} (interval: {interval})",
+            unit_dir.display()
+        );
+        println!("check status with: systemctl --user status deskctl-wallpaper.timer");
         return Ok(());
     }
 

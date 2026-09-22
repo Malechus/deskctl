@@ -95,7 +95,28 @@ deskctl display apply <profile>    # apply a named xrandr profile from config
 
 ## Running on a timer (systemd)
 
-Unit files are provided in `systemd/`. Install them as user units:
+The easiest way to set this up is:
+
+```sh
+deskctl --enable
+```
+
+This writes the bundled `deskctl-wallpaper.service`/`.timer` units (embedded
+in the binary at compile time, so this works even if you installed deskctl
+via `cargo install` without a local checkout of this repo) to
+`$XDG_CONFIG_HOME/systemd/user` (usually `~/.config/systemd/user`), then runs
+`systemctl --user daemon-reload` and `systemctl --user enable --now
+deskctl-wallpaper.timer` for you.
+
+How often the timer fires is controlled by `[timer].interval` in your config
+file (systemd time span syntax, e.g. "30min", "1h", "1h30min"). It defaults
+to `"2h"` if omitted - both when `--genconfig` writes a new config file and
+when `--enable` reads an existing one that predates this setting. Re-run
+`deskctl --enable` any time you change `interval` to update the installed
+timer.
+
+Alternatively, unit files are provided in `systemd/` if you'd rather install
+them yourself:
 
 ```sh
 mkdir -p ~/.config/systemd/user

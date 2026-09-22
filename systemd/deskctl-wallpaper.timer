@@ -2,9 +2,12 @@
 Description=Periodically change wallpaper via deskctl
 
 [Timer]
-# Change wallpaper every 30 minutes. Adjust as you like, e.g. "1h", "15min".
+# How often the wallpaper cycles - overridden by `deskctl --enable`, which
+# rewrites this line to match the `[timer].interval` setting in your config
+# file (default: 2h). If you install this file manually, edit it directly
+# instead, e.g. "1h", "15min", "1h30min".
 OnBootSec=5min
-OnUnitActiveSec=30min
+OnUnitActiveSec=2h
 
 [Install]
 WantedBy=timers.target
