@@ -69,6 +69,12 @@ as a first-class goal, equal in importance to shipping working code.
 - Keep the dependency list small and prefer well-established, actively
   maintained crates (e.g. `clap`, `serde`, `anyhow`, `rand`, `log` /
   `env_logger`) over reinventing functionality already in `std`.
+- Only use Free and Open Source Software (FOSS) dependencies unless explicit
+  permission is given to use something proprietary or with a conflicting
+  license.
+- When adding or changing dependencies, update both the README's
+  "Third-party software and licenses" table and `THIRD_PARTY_NOTICES.md` so
+  the acknowledgment section remains accurate as the project evolves.
 - Module layout: `cli.rs` (argument parsing), `config.rs` (config file
   loading/generation), `wallpaper.rs` (feh integration, ordered cycling
   logic), `display.rs` (xrandr integration), `state.rs` (persisted "current

@@ -4,10 +4,29 @@ A small Rust CLI tool that manages desktop wallpapers (via `feh`) and display
 layouts (via `xrandr`). Designed to be run directly from the command line or
 triggered periodically by a systemd user timer.
 
+Licensed under the MIT License.
+
 ## Requirements
 
 - `feh` and `xrandr` installed and on `PATH`
 - Rust toolchain (`cargo`/`rustc`) to build
+
+## Third-party software and licenses
+
+`deskctl` is distributed under the MIT License. The software it directly depends on is listed below for attribution, along with the relevant author or organization, license, and upstream link.
+
+| Component | Author / Organization | License | Link |
+| --- | --- | --- | --- |
+| `anyhow` | David Tolnay | Apache-2.0 OR MIT | https://github.com/dtolnay/anyhow |
+| `clap` | clap-rs contributors | Apache-2.0 OR MIT | https://github.com/clap-rs/clap |
+| `env_logger` | rust-cli contributors | Apache-2.0 OR MIT | https://github.com/rust-cli/env_logger |
+| `log` | The Rust Project Developers | Apache-2.0 OR MIT | https://github.com/rust-lang/log |
+| `serde` | serde-rs contributors | Apache-2.0 OR MIT | https://github.com/serde-rs/serde |
+| `toml` | toml-rs contributors | Apache-2.0 OR MIT | https://github.com/toml-rs/toml |
+| `feh` | Tomáš Hubínek ("derf") | MIT-feh (MIT variant) | https://github.com/derf/feh/ |
+| `xrandr` | X.Org / freedesktop.org | MIT License | https://www.x.org/ |
+
+See `THIRD_PARTY_NOTICES.md` for the full attribution summary and additional notice text.
 
 ## Building
 
