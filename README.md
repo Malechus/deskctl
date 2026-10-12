@@ -45,7 +45,7 @@ deskctl --genconfig=/custom/path.toml    # or write to a custom path
 ```
 
 This always builds a `[displays.detected]` profile from a live `xrandr
---query` of *this machine's* current monitor layout (correct mode names and
+--query` of *your machine's* current monitor layout (correct mode names and
 rotations included), so it's safe to apply immediately after generating.
 
 For wallpapers, optionally pass `--wallpaper-dir <dir>` alongside
