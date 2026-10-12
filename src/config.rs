@@ -99,11 +99,74 @@ impl Config {
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read config file at {}", path.display()))?;
 
-        let config: Config = toml::from_str(&raw)
+        let mut config: Config = toml::from_str(&raw)
             .with_context(|| format!("failed to parse config file at {}", path.display()))?;
+
+        for profile in config.wallpapers.values_mut().flatten() {
+            for image in &mut profile.images {
+                *image = expand_path(image)?;
+            }
+            if let Some(image) = &mut profile.notification_image {
+                *image = expand_path(image)?;
+            }
+        }
 
         Ok(config)
     }
+}
+
+/// Expand a leading `~`/`~/` and any `$VAR` / `${VAR}` references in a path.
+/// Shells do this before a program sees its arguments, but not for paths read
+/// from the config file or passed as `--opt=~/x`. `~user` is left alone, a
+/// `$` not followed by a variable name stays literal, and referencing an
+/// unset variable is an error so typos don't silently become wrong paths.
+pub fn expand_path(path: &Path) -> Result<PathBuf> {
+    expand_path_with(path, |name| std::env::var(name).ok())
+}
+
+fn expand_path_with(path: &Path, lookup: impl Fn(&str) -> Option<String>) -> Result<PathBuf> {
+    let Some(text) = path.to_str() else {
+        return Ok(path.to_path_buf());
+    };
+
+    let mut rest = text;
+    let mut out = String::new();
+    if rest == "~" || rest.starts_with("~/") {
+        out.push_str(&lookup("HOME").context("cannot expand '~': HOME is not set")?);
+        rest = &rest[1..];
+    }
+
+    while let Some(pos) = rest.find('$') {
+        out.push_str(&rest[..pos]);
+        let after = &rest[pos + 1..];
+
+        let (name, consumed) = if let Some(braced) = after.strip_prefix('{') {
+            match braced.find('}') {
+                Some(end) => (&braced[..end], end + 2),
+                None => bail!("unterminated '${{' in path '{text}'"),
+            }
+        } else {
+            let len = after
+                .char_indices()
+                .find(|&(i, c)| !(c == '_' || c.is_ascii_alphabetic() || (i > 0 && c.is_ascii_digit())))
+                .map_or(after.len(), |(i, _)| i);
+            (&after[..len], len)
+        };
+
+        if name.is_empty() {
+            out.push('$');
+            rest = after;
+            continue;
+        }
+
+        let value = lookup(name)
+            .with_context(|| format!("environment variable '{name}' (used in path '{text}') is not set"))?;
+        out.push_str(&value);
+        rest = &after[consumed..];
+    }
+    out.push_str(rest);
+
+    Ok(PathBuf::from(out))
 }
 
 /// Resolve the config path we should use: the explicit path if one was
@@ -114,7 +177,7 @@ fn resolve_path(explicit_path: Option<&str>) -> Result<PathBuf> {
     if let Some(p) = explicit_path
         && !p.is_empty()
     {
-        return Ok(PathBuf::from(p));
+        return expand_path(Path::new(p));
     }
 
     let config_home = match std::env::var("XDG_CONFIG_HOME") {
@@ -258,4 +321,44 @@ fn placeholder_wallpaper_profiles() -> BTreeMap<String, Vec<WallpaperProfile>> {
         }],
     );
     wallpapers
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn expand(p: &str) -> Result<PathBuf> {
+        expand_path_with(Path::new(p), |name| match name {
+            "HOME" => Some("/home/me".to_string()),
+            "WALLS" => Some("/data/walls".to_string()),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn expands_tilde() {
+        assert_eq!(expand("~").unwrap(), PathBuf::from("/home/me"));
+        assert_eq!(expand("~/a.jpg").unwrap(), PathBuf::from("/home/me/a.jpg"));
+    }
+
+    #[test]
+    fn expands_variables() {
+        assert_eq!(expand("$WALLS/a.jpg").unwrap(), PathBuf::from("/data/walls/a.jpg"));
+        assert_eq!(expand("${WALLS}x/a.jpg").unwrap(), PathBuf::from("/data/wallsx/a.jpg"));
+        assert_eq!(expand("~/$WALLS").unwrap(), PathBuf::from("/home/me//data/walls"));
+    }
+
+    #[test]
+    fn leaves_other_text_alone() {
+        for p in ["/abs/~/x", "rel/x", "~user/x", "a~b", "cost$", "a$/b", "$1x"] {
+            assert_eq!(expand(p).unwrap(), PathBuf::from(p));
+        }
+    }
+
+    #[test]
+    fn unset_or_malformed_variable_is_an_error() {
+        assert!(expand("$NOPE/x").is_err());
+        assert!(expand("${NOPE}").is_err());
+        assert!(expand("${WALLS").is_err());
+    }
 }

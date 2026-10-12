@@ -82,6 +82,12 @@ Either way, the resulting file has:
   passed to `notify-send -i` as the notification's icon; omit it for a
   plain text notification.
 
+Image paths (and `--config`, `--wallpaper-dir`, `wallpaper set`) support a
+leading `~` plus `$VAR` / `${VAR}` environment variables, e.g.
+`images = ["$WALLPAPERS/nature/001.jpg"]`. Referencing an unset variable is an
+error. Note that under a systemd user timer, only variables known to the
+user manager are available (see `systemctl --user import-environment`).
+
 ## Usage
 
 Running `deskctl` with no arguments is the same as `deskctl wallpaper next`.

@@ -26,8 +26,12 @@ fn main() -> Result<()> {
     // its whole purpose is to create one.
     if let Some(raw_path) = cli.genconfig.as_deref() {
         let explicit = if raw_path.is_empty() { None } else { Some(raw_path) };
-        let wallpaper_dir = cli.wallpaper_dir.as_deref().map(std::path::Path::new);
-        let path = config::generate(explicit, wallpaper_dir)?;
+        let wallpaper_dir = cli
+            .wallpaper_dir
+            .as_deref()
+            .map(|d| config::expand_path(std::path::Path::new(d)))
+            .transpose()?;
+        let path = config::generate(explicit, wallpaper_dir.as_deref())?;
         println!("generated config file at {}", path.display());
         return Ok(());
     }
@@ -140,8 +144,9 @@ fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
             println!("applied wallpaper profile '{profile}' across {count} screen(s)");
         }
         WallpaperAction::Set { path } => {
-            wallpaper::set_multiple(&[std::path::PathBuf::from(&path)])?;
-            println!("wallpaper set: {path}");
+            let path = config::expand_path(std::path::Path::new(&path))?;
+            wallpaper::set_multiple(std::slice::from_ref(&path))?;
+            println!("wallpaper set: {}", path.display());
         }
     }
     Ok(())
