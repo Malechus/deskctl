@@ -60,11 +60,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
-    let Some(command) = cli.command else {
-        anyhow::bail!(
-            "no command given - run `deskctl --help` for usage, or `deskctl --genconfig` to create a config file"
-        );
-    };
+    // With no subcommand, behave like `deskctl wallpaper next`.
+    let command = cli.command.unwrap_or(Command::Wallpaper {
+        action: WallpaperAction::Next,
+    });
 
     let config = Config::load(cli.config.as_deref())?;
 

@@ -84,6 +84,8 @@ Either way, the resulting file has:
 
 ## Usage
 
+Running `deskctl` with no arguments is the same as `deskctl wallpaper next`.
+
 ```sh
 deskctl wallpaper list             # show wallpaper profiles (and cycle order) for the current screen count
 deskctl wallpaper next              # advance to the next profile in sequence and apply it
