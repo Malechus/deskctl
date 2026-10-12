@@ -1,11 +1,4 @@
 //! Display layout management via `xrandr`.
-//!
-//! LEARNING NOTE: Here we parse the *output* of an external command
-//! (`xrandr --query`) as plain text. Rust has no built-in regex; the `regex`
-//! crate comes in transitively via `env_logger`, but we deliberately avoid
-//! depending on that directly and instead use simple string methods
-//! (`.contains`, `.split_whitespace`) - this keeps the parsing easy to read
-//! while you're still learning the language.
 
 use anyhow::{bail, Context, Result};
 use std::process::Command;
@@ -32,13 +25,8 @@ pub struct Monitor {
 
 /// Run `xrandr --query` and parse the connected monitor list.
 ///
-/// LEARNING NOTE: `xrandr --query` output alternates between "header" lines
-/// (one per output, starting at column 0 - e.g. `DP-0 connected ...`) and
-/// indented "mode" lines listing that output's supported resolutions, with
-/// the currently active one marked by an `*`. To parse this correctly we
-/// need to remember *which output* we're currently looking at as we walk
-/// through its indented mode lines - `current` (an `Option<usize>` index
-/// into `monitors`) is exactly that piece of running state.
+/// Output headers are followed by indented mode lines. Track the current
+/// output so its active mode can be assigned to the correct monitor.
 pub fn list_monitors() -> Result<Vec<Monitor>> {
     let output = Command::new("xrandr")
         .arg("--query")

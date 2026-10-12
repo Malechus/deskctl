@@ -1,15 +1,6 @@
 //! Systemd user-unit installation for the wallpaper-cycling timer.
-//!
-//! LEARNING NOTE: `include_str!("../systemd/deskctl-wallpaper.service")` is a
-//! compile-time macro that reads a file *at build time* and embeds its
-//! contents directly into the compiled binary as a `&'static str`. This is
-//! very different from reading a file at runtime (`std::fs::read_to_string`)
-//! - there's no file I/O happening when `--enable` runs, and no dependency
-//!   on the `systemd/` directory existing on disk (which it wouldn't, if
-//!   someone installed deskctl via `cargo install` rather than cloning the
-//!   repo). Think of it as similar to a C#/Java "embedded resource", but
-//!   resolved by the compiler rather than bundled into an assembly/jar at
-//!   packaging time.
+//! Unit templates are embedded in the binary so installed copies do not
+//! depend on the repository's `systemd/` directory being present.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -53,14 +44,6 @@ pub fn enable(interval: &str) -> Result<PathBuf> {
 /// `OnUnitActiveSec=` line to use `interval` instead of the template's own
 /// hardcoded default.
 ///
-/// LEARNING NOTE: `.lines()` returns an iterator over `&str` slices, one per
-/// line (without the trailing `\n`). `.map()` transforms each line through a
-/// closure (`|line| ...`, Rust's lambda syntax - like a Java lambda or C#
-/// `Func<>`, but the compiler infers the parameter type here from context).
-/// `.collect::<Vec<_>>()` then gathers the resulting `String`s back into a
-/// `Vec`, and `.join("\n")` stitches them into one string again - a common
-/// Rust idiom for "transform every line, then reassemble the text" that
-/// avoids writing a manual loop with a mutable accumulator.
 fn render_timer_unit(interval: &str) -> String {
     let body = TIMER_UNIT
         .lines()
@@ -119,10 +102,6 @@ fn run_systemctl(args: &[&str]) -> Result<()> {
     Ok(())
 }
 
-// LEARNING NOTE: same `#[cfg(test)]` convention as `wallpaper.rs` - these
-// tests only exercise `render_timer_unit`, which is pure string manipulation
-// with no filesystem or `systemctl` calls, so they run instantly and need no
-// mocking.
 #[cfg(test)]
 mod tests {
     use super::*;

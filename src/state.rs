@@ -1,12 +1,8 @@
 //! Cycling state for `deskctl wallpaper next`.
 //!
-//! LEARNING NOTE: this mirrors what `wallswitcher.sh` did with
-//! `$XDG_CACHE_HOME/wallSetting` - remembering which profile was last applied
-//! so the *next* invocation knows where to advance to. We deliberately keep
-//! this in `$XDG_CACHE_HOME` rather than `$XDG_CONFIG_HOME`: config is
-//! something a user writes and edits by hand, while cache is
-//! machine-generated bookkeeping that's safe to delete at any time (deskctl
-//! will just start cycling from the first profile again).
+//! The last-applied profile is stored in `$XDG_CACHE_HOME`, separate from
+//! user-managed configuration. Removing this cache resets cycling to the
+//! first profile.
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
@@ -34,11 +30,6 @@ fn state_file(screen_count: usize) -> Result<PathBuf> {
 /// Read the name of the last-applied wallpaper profile for `screen_count`,
 /// if any has been recorded yet.
 ///
-/// LEARNING NOTE: the return type is `Result<Option<String>>` - a `Result`
-/// (this can fail, e.g. a permissions error) wrapping an `Option` (there
-/// might legitimately be no prior state, which isn't an error - it just
-/// means "first run"). This nested-wrapper pattern is common in Rust and
-/// lets you distinguish "failed to check" from "checked, found nothing".
 pub fn read_current_profile(screen_count: usize) -> Result<Option<String>> {
     let path = state_file(screen_count)?;
     if !path.exists() {

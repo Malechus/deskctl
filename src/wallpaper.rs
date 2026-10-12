@@ -1,10 +1,4 @@
 //! Wallpaper management via `feh`.
-//!
-//! LEARNING NOTE: This module shows how Rust calls out to external programs.
-//! `std::process::Command` is a builder: each method call (`.arg(...)`) returns
-//! `&mut Self`, so we can chain calls fluently, similar to how you might chain
-//! `ProcessStartInfo` configuration in C#, but built into the standard library
-//! with no extra dependency needed.
 
 use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
@@ -45,13 +39,6 @@ pub fn list_images(dir: &Path) -> Result<Vec<PathBuf>> {
 /// computes an index. That makes it trivial to unit test (see the `tests`
 /// module below) without needing a real config file or `feh` installed.
 ///
-/// LEARNING NOTE: the return type `&WallpaperProfile` borrows from the
-/// `profiles` slice passed in, rather than cloning it. The lifetime of that
-/// borrow is tied to `profiles` by Rust's borrow checker - the compiler will
-/// refuse to compile code that tries to use the returned reference after
-/// `profiles` goes out of scope. This is the "no null, no dangling pointer"
-/// guarantee ownership/borrowing gives you, enforced at compile time rather
-/// than caught at runtime like a Java/C# `NullReferenceException` might be.
 pub fn next_profile<'a>(
     profiles: &'a [WallpaperProfile],
     current_name: Option<&str>,
@@ -87,13 +74,8 @@ pub fn apply_profile(profile: &WallpaperProfile) -> Result<()> {
 /// Set wallpapers directly via `feh --bg-fill`, one image per screen, in
 /// the given order.
 ///
-/// LEARNING NOTE: `feh` applies each `--bg-fill <path>` argument to the next
-/// connected output in xrandr's reported order, so passing N images sets N
-/// different wallpapers across N monitors in one call. We build the
-/// `Command` dynamically with a loop rather than a fixed set of `.arg()`
-/// calls, since we don't know the image count until runtime. `--no-fehbg`
-/// matches the original `wallswitcher.sh` script: it tells feh not to write
-/// a `~/.fehbg` restore script, since deskctl's config file is already the
+/// `feh` applies each image to the next connected output in xrandr order.
+/// `--no-fehbg` avoids writing a restore script; deskctl's config is the
 /// source of truth for restoring wallpapers.
 pub fn set_multiple(paths: &[PathBuf]) -> Result<()> {
     if paths.is_empty() {
@@ -129,12 +111,6 @@ pub fn set_multiple(paths: &[PathBuf]) -> Result<()> {
 /// attaches it via `notify-send -i <path>`, while `None` (or, defensively,
 /// an empty path) skips the `-i` flag entirely rather than passing
 /// `notify-send` a broken/empty icon argument.
-///
-/// LEARNING NOTE: `Option<&Path>` parameter (rather than `Option<PathBuf>`)
-/// lets the caller pass a *borrowed* view of the profile's field without
-/// transferring ownership - `profile.notification_image.as_deref()` in
-/// `apply_profile` does exactly this conversion from `&Option<PathBuf>` to
-/// `Option<&Path>`.
 fn notify(profile_name: &str, image: Option<&Path>) {
     let mut cmd = Command::new("notify-send");
     cmd.arg("-t").arg("2000");
@@ -153,12 +129,6 @@ fn notify(profile_name: &str, image: Option<&Path>) {
     }
 }
 
-// LEARNING NOTE: `#[cfg(test)]` marks this module as test-only code - it's
-// compiled and run by `cargo test` but stripped out of normal builds
-// entirely, so it adds zero size/cost to the real `deskctl` binary. This is
-// Rust's built-in unit testing convention: tests live alongside the code
-// they test, in the same file, rather than a separate test project like
-// you'd typically see in Java/C#.
 #[cfg(test)]
 mod tests {
     use super::*;

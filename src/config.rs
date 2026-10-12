@@ -1,12 +1,4 @@
 //! Configuration loading (and generation) for deskctl.
-//!
-//! LEARNING NOTE: `serde` is Rust's de-facto serialization framework. Instead
-//! of writing a parser by hand (or using reflection like Java/C# JSON
-//! libraries often do), we `#[derive(Deserialize, Serialize)]` on plain
-//! structs and serde generates both directions of conversion at compile
-//! time. `Deserialize` lets us parse TOML into these structs; `Serialize`
-//! (needed for `--genconfig`) lets us go the other way and turn a struct
-//! back into TOML text.
 
 use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
@@ -16,14 +8,6 @@ use std::path::{Path, PathBuf};
 use crate::{display, wallpaper};
 
 /// The root of our config.toml file.
-///
-/// LEARNING NOTE: we use `BTreeMap` here rather than `HashMap`. Both map
-/// string keys to values (like `Dictionary<string, T>` in C# or
-/// `HashMap<String, T>` in Java), but `BTreeMap` keeps its keys in sorted
-/// order. That doesn't matter for *looking up* a profile by name, but it
-/// does matter when we *write* the config back out for `--genconfig`: a
-/// `BTreeMap` always serializes in the same (sorted) order, whereas a
-/// `HashMap`'s iteration order is unspecified and can vary between runs.
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
     /// Named xrandr display profiles, e.g. "docked" -> DisplayProfile.
@@ -41,12 +25,6 @@ pub struct Config {
     pub wallpapers: BTreeMap<String, Vec<WallpaperProfile>>,
 
     /// Settings for the systemd timer that `deskctl --enable` installs.
-    ///
-    /// LEARNING NOTE: `#[serde(default)]` here means the entire `[timer]`
-    /// table may be omitted from the config file, in which case serde fills
-    /// this field in using `TimerConfig::default()` (below) rather than
-    /// failing to parse. This is how existing config files written before
-    /// this field existed keep loading without any changes.
     #[serde(default)]
     pub timer: TimerConfig,
 }
@@ -57,13 +35,6 @@ pub struct TimerConfig {
     /// How often the wallpaper timer fires, in systemd time span syntax
     /// (e.g. "30min", "2h", "1h30min") - this becomes the `OnUnitActiveSec=`
     /// value in the generated `deskctl-wallpaper.timer` unit.
-    ///
-    /// LEARNING NOTE: `#[serde(default = "default_timer_interval")]` on this
-    /// field (rather than just `#[serde(default)]`) tells serde to call our
-    /// own function to produce the default, instead of `String::default()`
-    /// (which would just be `""`). This is what makes an *explicit*
-    /// `[timer]` table with `interval` simply missing also fall back to
-    /// "2h", not just an entirely absent `[timer]` table.
     #[serde(default = "default_timer_interval")]
     pub interval: String,
 }
@@ -75,10 +46,6 @@ pub fn default_timer_interval() -> String {
     "2h".to_string()
 }
 
-/// LEARNING NOTE: serde's `#[serde(default)]` on the `Config::timer` field
-/// (above) requires `TimerConfig: Default` - implementing it by hand (rather
-/// than `#[derive(Default)]`) lets us reuse `default_timer_interval()` so
-/// there's exactly one place "2h" is written down.
 impl Default for TimerConfig {
     fn default() -> Self {
         Self {
@@ -104,13 +71,8 @@ pub struct DisplayProfile {
 /// img3 img4`. There is no randomness here: the same profile always sets
 /// the same images, in the same screen order, every time it's applied.
 ///
-/// LEARNING NOTE: this struct lives inside a `Vec<WallpaperProfile>` (see
-/// `Config::wallpapers` above), so in TOML it's written using "array of
-/// tables" syntax: `[[wallpapers.2]]` starts a new entry in the list for the
-/// "2 screens" key. Each `[[wallpapers.2]]` block becomes one
-/// `WallpaperProfile` in that `Vec`, and `Vec` preserves the order entries
-/// appeared in the file - which is exactly what lets `wallpaper next` cycle
-/// through them in a predictable, repeatable sequence.
+/// Profiles are declared as TOML array-of-tables (for example,
+/// `[[wallpapers.2]]`); their order in the file determines the cycling order.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct WallpaperProfile {
     /// Profile name, used with `deskctl wallpaper apply <name>` and shown in
@@ -124,12 +86,6 @@ pub struct WallpaperProfile {
     /// profile is applied (via `notify-send -i <path>`). `None` (the field
     /// is omitted entirely from the TOML file) or an empty string both mean
     /// "send the notification without an image."
-    ///
-    /// LEARNING NOTE: `#[serde(default)]` on an `Option<T>` field means the
-    /// field is allowed to be missing from the TOML file entirely, in which
-    /// case serde fills in `None` automatically - without it, serde would
-    /// require every profile to explicitly write `notification_image = ""`
-    /// or similar, which would be tedious for the common case of "no icon."
     #[serde(default)]
     pub notification_image: Option<PathBuf>,
 }
@@ -137,16 +93,9 @@ pub struct WallpaperProfile {
 impl Config {
     /// Load config from an explicit path, or fall back to the default
     /// `$XDG_CONFIG_HOME/deskctl/config.toml` location.
-    ///
-    /// LEARNING NOTE: `Option<String>` here mirrors what we saw in cli.rs -
-    /// the caller may or may not have passed `--config`. `Result<Self>` means
-    /// this function can fail (missing file, bad TOML); Rust forces callers to
-    /// handle that explicitly, there is no silent null or uncaught exception.
     pub fn load(explicit_path: Option<&str>) -> Result<Self> {
         let path = resolve_path(explicit_path)?;
 
-        // `with_context` from anyhow lets us attach a human-readable message
-        // to any error as it bubbles up, without losing the original cause.
         let raw = std::fs::read_to_string(&path)
             .with_context(|| format!("failed to read config file at {}", path.display()))?;
 
@@ -162,10 +111,6 @@ impl Config {
 /// falling back to `~/.config/deskctl/config.toml` if `XDG_CONFIG_HOME` isn't
 /// set (this fallback is what the XDG Base Directory spec itself mandates).
 fn resolve_path(explicit_path: Option<&str>) -> Result<PathBuf> {
-    // LEARNING NOTE: `if let Some(p) = x && condition` is "let-chains" - a
-    // relatively new Rust feature that lets you combine a pattern match with
-    // an extra boolean condition in one `if`, avoiding a nested `if` block.
-    // clippy (Rust's built-in linter) suggested this collapse automatically.
     if let Some(p) = explicit_path
         && !p.is_empty()
     {
@@ -204,8 +149,6 @@ pub fn generate(explicit_path: Option<&str>, wallpaper_dir: Option<&Path>) -> Re
 
     let config = build_config(wallpaper_dir)?;
 
-    // `toml::to_string_pretty` is the mirror image of `toml::from_str`: it
-    // serializes our struct back into human-readable TOML text.
     let contents = toml::to_string_pretty(&config).context("failed to serialize generated config to TOML")?;
 
     std::fs::write(&path, contents)
@@ -260,10 +203,7 @@ fn real_wallpaper_profiles(dir: &Path, screen_count: usize) -> Result<BTreeMap<S
         bail!("no image files (.png/.jpg/.jpeg/.bmp) found in {}", dir.display());
     }
 
-    // LEARNING NOTE: `.max(1)` guards against `screen_count` being 0 (e.g.
-    // xrandr reporting no connected monitors at all) - we still want to
-    // generate at least a one-image-per-profile config rather than an
-    // empty, useless one.
+    // Keep generated profiles non-empty even when xrandr reports no connected monitors.
     let per_profile = screen_count.max(1);
 
     let build_profile = |name: &str, start: usize| WallpaperProfile {
@@ -319,4 +259,3 @@ fn placeholder_wallpaper_profiles() -> BTreeMap<String, Vec<WallpaperProfile>> {
     );
     wallpapers
 }
-
