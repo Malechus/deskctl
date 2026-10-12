@@ -173,6 +173,89 @@ pub fn active_output_count(profile: &DisplayProfile) -> usize {
     active_outputs
 }
 
+/// What a profile's args ask of one output.
+struct OutputSpec<'a> {
+    name: &'a str,
+    off: bool,
+    mode: Option<&'a str>,
+    rotation: &'a str,
+}
+
+fn parse_output_specs(profile: &DisplayProfile) -> Vec<OutputSpec<'_>> {
+    let mut specs: Vec<OutputSpec> = Vec::new();
+    let mut args = profile.args.iter().map(String::as_str);
+    while let Some(arg) = args.next() {
+        match arg {
+            "--output" => {
+                if let Some(name) = args.next() {
+                    specs.push(OutputSpec {
+                        name,
+                        off: false,
+                        mode: None,
+                        rotation: "normal",
+                    });
+                }
+            }
+            "--off" => {
+                if let Some(spec) = specs.last_mut() {
+                    spec.off = true;
+                }
+            }
+            "--mode" => {
+                if let (Some(mode), Some(spec)) = (args.next(), specs.last_mut()) {
+                    spec.mode = Some(mode);
+                }
+            }
+            "--rotate" => {
+                if let (Some(rotation), Some(spec)) = (args.next(), specs.last_mut()) {
+                    spec.rotation = rotation;
+                }
+            }
+            _ => {}
+        }
+    }
+    specs
+}
+
+/// Whether the monitors' current state is what `profile` would produce.
+/// Outputs the profile doesn't mention must be inactive; outputs it turns
+/// off must be inactive; outputs it enables must be active with the
+/// requested mode (if any) and rotation. Position is not compared.
+fn profile_matches(profile: &DisplayProfile, monitors: &[Monitor]) -> bool {
+    let specs = parse_output_specs(profile);
+    if specs.is_empty() {
+        return false;
+    }
+    let is_active = |m: &Monitor| m.connected && m.current_mode.is_some();
+
+    let all_specs_hold = specs.iter().all(|spec| {
+        let monitor = monitors.iter().find(|m| m.name == spec.name);
+        if spec.off {
+            return monitor.is_none_or(|m| !is_active(m));
+        }
+        monitor.is_some_and(|m| {
+            is_active(m)
+                && spec.mode.is_none_or(|mode| m.current_mode.as_deref() == Some(mode))
+                && m.rotation.as_deref().unwrap_or("normal") == spec.rotation
+        })
+    });
+
+    all_specs_hold
+        && monitors
+            .iter()
+            .filter(|m| is_active(m))
+            .all(|m| specs.iter().any(|spec| spec.name == m.name && !spec.off))
+}
+
+/// Find the first configured profile (in config order) matching the
+/// monitor layout xrandr currently reports.
+pub fn detect_profile<'a>(
+    profiles: &'a [DisplayProfile],
+    monitors: &[Monitor],
+) -> Option<&'a DisplayProfile> {
+    profiles.iter().find(|p| profile_matches(p, monitors))
+}
+
 /// Given the configured display profiles and the last profile applied,
 /// return the next profile in config-file order, wrapping at the end.
 pub fn next_profile<'a>(
@@ -247,6 +330,47 @@ mod tests {
     #[test]
     fn empty_profile_list_is_an_error() {
         assert!(next_profile(&[], None).is_err());
+    }
+
+    fn monitor(name: &str, mode: Option<&str>, rotation: Option<&str>) -> Monitor {
+        Monitor {
+            name: name.to_string(),
+            connected: true,
+            current_mode: mode.map(str::to_string),
+            rotation: rotation.map(str::to_string),
+        }
+    }
+
+    fn profile_with(name: &str, args: &[&str]) -> DisplayProfile {
+        DisplayProfile {
+            name: name.to_string(),
+            args: args.iter().map(|a| a.to_string()).collect(),
+        }
+    }
+
+    #[test]
+    fn detects_matching_profile_by_mode_rotation_and_off_outputs() {
+        let single = profile_with("single", &["--output", "DP-0", "--off", "--output", "HDMI-0", "--mode", "1920x1080"]);
+        let dual = profile_with(
+            "dual",
+            &["--output", "DP-0", "--mode", "1080x1920", "--rotate", "left", "--output", "HDMI-0", "--mode", "1920x1080"],
+        );
+        let profiles = vec![single, dual];
+
+        let one = vec![monitor("DP-0", None, None), monitor("HDMI-0", Some("1920x1080"), None)];
+        assert_eq!(detect_profile(&profiles, &one).unwrap().name, "single");
+
+        let two = vec![
+            monitor("DP-0", Some("1080x1920"), Some("left")),
+            monitor("HDMI-0", Some("1920x1080"), None),
+        ];
+        assert_eq!(detect_profile(&profiles, &two).unwrap().name, "dual");
+
+        let wrong_rotation = vec![
+            monitor("DP-0", Some("1080x1920"), None),
+            monitor("HDMI-0", Some("1920x1080"), None),
+        ];
+        assert!(detect_profile(&profiles, &wrong_rotation).is_none());
     }
 
     #[test]

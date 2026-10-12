@@ -20,6 +20,7 @@ fn main() -> Result<()> {
     env_logger::init();
 
     let cli = Cli::parse();
+    cli.exit_if_help_requested();
 
     // Handle `--genconfig` first, and return immediately - it deliberately
     // does not require (or attempt to load) an existing config file, since
@@ -144,8 +145,17 @@ fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
 }
 
 fn active_display_name(config: &Config) -> Result<String> {
-    let display_name = state::read_current_display_profile()?
-        .context("no display profile is active - run `deskctl display apply <profile>` first")?;
+    let display_name = match state::read_current_display_profile()? {
+        Some(name) => name,
+        None => {
+            let monitors = display::list_monitors()?;
+            let detected = display::detect_profile(&config.displays, &monitors)
+                .context("no display profile is active and none matches the current xrandr layout - run `deskctl display apply <profile>` first")?;
+            log::info!("detected active display profile '{}' from xrandr", detected.name);
+            state::write_current_display_profile(&detected.name)?;
+            detected.name.clone()
+        }
+    };
     if !config.displays.iter().any(|profile| profile.name == display_name) {
         anyhow::bail!(
             "active display profile '{display_name}' is not configured - apply a configured display profile first"

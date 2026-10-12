@@ -101,6 +101,21 @@ leading `~` plus `$VAR` / `${VAR}` environment variables, e.g.
 error. Note that under a systemd user timer, only variables known to the
 user manager are available (see `systemctl --user import-environment`).
 
+**Reserved and awkward profile names**
+
+- **`help`**: `deskctl display apply help`, `deskctl wallpaper apply help`
+  and `deskctl wallpaper set help` print that subcommand's help text, exactly
+  like `--help`, instead of looking up a profile (or file) with that name. A
+  display or wallpaper profile named `help` therefore can't be applied by
+  name, so don't use it. To set a wallpaper file literally called `help`, use
+  a path such as `./help`.
+- **Names starting with `-`** (e.g. `-work`) are parsed as command-line flags.
+  They only work after a `--` separator (`deskctl display apply -- -work`), so
+  it's easiest to avoid them.
+- **`detected`** is the name `--genconfig` gives the display profile it builds
+  from your live `xrandr` layout. It isn't reserved, but reusing it for a
+  hand-written profile makes the config confusing.
+
 ## Usage
 
 Running `deskctl` with no arguments is the same as `deskctl wallpaper next`.

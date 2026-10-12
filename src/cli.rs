@@ -1,6 +1,6 @@
 //! Command-line interface definition for deskctl.
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
 
 /// Command-line options for deskctl.
 #[derive(Parser)]
@@ -37,6 +37,34 @@ pub struct Cli {
     /// `deskctl --genconfig` works without also requiring a subcommand.
     #[command(subcommand)]
     pub command: Option<Command>,
+}
+
+impl Cli {
+    /// If a subcommand's free-form string argument is the literal word
+    /// `help`, print that subcommand's help (as `--help` would) and exit.
+    pub fn exit_if_help_requested(&self) {
+        let path: [&str; 2] = match &self.command {
+            Some(Command::Wallpaper { action: WallpaperAction::Apply { profile } })
+                if profile == "help" => ["wallpaper", "apply"],
+            Some(Command::Wallpaper { action: WallpaperAction::Set { path } })
+                if path == "help" => ["wallpaper", "set"],
+            Some(Command::Display { action: DisplayAction::Apply { profile } })
+                if profile == "help" => ["display", "apply"],
+            _ => return,
+        };
+
+        // `build()` propagates parent names so usage reads `deskctl wallpaper apply ...`.
+        let mut root = <Cli as CommandFactory>::command();
+        root.build();
+        if let Some(sub) = root
+            .find_subcommand(path[0])
+            .and_then(|group| group.find_subcommand(path[1]))
+        {
+            let mut sub = sub.clone();
+            let _ = sub.print_long_help();
+            std::process::exit(0);
+        }
+    }
 }
 
 /// Top-level command groups.
