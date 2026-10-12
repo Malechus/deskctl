@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check package version
+        id: version
+        env:
+          BEFORE: ${{ github.event.before }}
+        run: |
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import os
+          import subprocess
+          import tomllib
+
+          with open("Cargo.toml", "rb") as manifest:
+              current = tomllib.load(manifest)["package"]["version"]
+
+          before = os.environ["BEFORE"]
+          if set(before) == {"0"}:
+              changed = False
+          else:
+              previous_manifest = subprocess.check_output(
+                  ["git", "show", f"{before}:Cargo.toml"]
+              )
+              previous = tomllib.loads(previous_manifest.decode())["package"]["version"]
+              changed = current != previous
+
+          print(f"changed={str(changed).lower()}")
+          print(f"current={current}")
+          PY
+
+      - name: Create GitHub release
+        if: steps.version.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.current }}
+        run: gh release create "v${VERSION}" --title "deskctl ${VERSION}" --generate-notes

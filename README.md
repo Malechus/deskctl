@@ -11,6 +11,12 @@ Licensed under the MIT License.
 - `feh` and `xrandr` installed and on `PATH`
 - Rust toolchain (`cargo`/`rustc`) to build
 
+## Releases
+
+When a push to `main` changes the package version in `Cargo.toml`, GitHub
+Actions creates a `v<version>` tag and a GitHub release with generated release
+notes. Changes that do not modify the package version do not create a release.
+
 ## Third-party software and licenses
 
 `deskctl` is distributed under the MIT License. The software it directly depends on is listed below for attribution, along with the relevant author or organization, license, and upstream link.
