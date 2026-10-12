@@ -82,66 +82,57 @@ fn main() -> Result<()> {
 fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
     match action {
         WallpaperAction::List => {
-            let count = display::count_connected_monitors()?;
-            match config.wallpapers.get(&count.to_string()) {
-                Some(profiles) => {
-                    println!("wallpaper profiles for {count} connected screen(s), in cycle order:");
-                    for p in profiles {
-                        let images: Vec<String> =
-                            p.images.iter().map(|i| i.display().to_string()).collect();
-                        println!("  {} -> {}", p.name, images.join(", "));
-                    }
+            let display_name = active_display_name(config)?;
+            let profiles: Vec<_> = config.wallpapers_for_display(&display_name).collect();
+            if profiles.is_empty() {
+                println!("no wallpaper profiles configured for display '{display_name}'");
+            } else {
+                println!(
+                    "wallpaper profiles compatible with display '{display_name}', in cycle order:"
+                );
+                for profile in profiles {
+                    let images: Vec<String> = profile
+                        .images
+                        .iter()
+                        .map(|image| image.display().to_string())
+                        .collect();
+                    println!("  {} -> {}", profile.name, images.join(", "));
                 }
-                None => println!("no wallpaper profiles configured for {count} connected screen(s)"),
             }
         }
         WallpaperAction::Next => {
-            let count = display::count_connected_monitors()?;
-            let profiles = config
-                .wallpapers
-                .get(&count.to_string())
-                .with_context(|| {
-                    format!(
-                        "no wallpaper profiles configured for {count} connected screen(s) - \
-                         add a [[wallpapers.{count}]] entry to your config"
-                    )
-                })?;
+            let display_name = active_display_name(config)?;
+            let profiles: Vec<_> = config.wallpapers_for_display(&display_name).collect();
+            let applicable: Vec<_> = profiles.into_iter().cloned().collect();
+            if applicable.is_empty() {
+                anyhow::bail!(
+                    "no wallpaper profiles configured for display '{display_name}' - add a [[wallpapers]] entry with displays = [\"{display_name}\"]"
+                );
+            }
 
-            // Look up where we left off last time (per screen count), work
-            // out the next profile in sequence, apply it, then persist the
-            // new position so the *following* `next` call continues from
-            // here rather than restarting at the beginning.
-            let current_name = state::read_current_profile(count)?;
-            let next = wallpaper::next_profile(profiles, current_name.as_deref())?;
+            let current_name = state::read_current_profile(&display_name)?;
+            let next = wallpaper::next_profile(&applicable, current_name.as_deref())?;
             let next_name = next.name.clone();
 
             wallpaper::apply_profile(next)?;
-            state::write_current_profile(count, &next_name)?;
+            state::write_current_profile(&display_name, &next_name)?;
 
-            println!("applied wallpaper profile '{next_name}' across {count} screen(s)");
+            println!("applied wallpaper profile '{next_name}' for display '{display_name}'");
         }
         WallpaperAction::Apply { profile } => {
-            let count = display::count_connected_monitors()?;
-            let profiles = config
-                .wallpapers
-                .get(&count.to_string())
-                .with_context(|| format!("no wallpaper profiles configured for {count} connected screen(s)"))?;
-
+            let display_name = active_display_name(config)?;
+            let profiles: Vec<_> = config.wallpapers_for_display(&display_name).collect();
             let Some(p) = profiles.iter().find(|p| p.name == profile) else {
                 let available: Vec<&str> = profiles.iter().map(|p| p.name.as_str()).collect();
                 anyhow::bail!(
-                    "no wallpaper profile named '{profile}' for {count} connected screen(s) (available: {available:?})"
+                    "no wallpaper profile named '{profile}' compatible with display '{display_name}' (available: {available:?})"
                 );
             };
 
             wallpaper::apply_profile(p)?;
-            // Manually applying a profile also updates the cycle position,
-            // so a later `wallpaper next` continues on from wherever you
-            // jumped to - matching how the original bash script's `case`
-            // statement worked regardless of how `currentSetting` got set.
-            state::write_current_profile(count, &profile)?;
+            state::write_current_profile(&display_name, &profile)?;
 
-            println!("applied wallpaper profile '{profile}' across {count} screen(s)");
+            println!("applied wallpaper profile '{profile}' for display '{display_name}'");
         }
         WallpaperAction::Set { path } => {
             let path = config::expand_path(std::path::Path::new(&path))?;
@@ -150,6 +141,17 @@ fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn active_display_name(config: &Config) -> Result<String> {
+    let display_name = state::read_current_display_profile()?
+        .context("no display profile is active - run `deskctl display apply <profile>` first")?;
+    if !config.displays.iter().any(|profile| profile.name == display_name) {
+        anyhow::bail!(
+            "active display profile '{display_name}' is not configured - apply a configured display profile first"
+        );
+    }
+    Ok(display_name)
 }
 
 fn handle_display(action: DisplayAction, config: &Config) -> Result<()> {

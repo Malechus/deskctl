@@ -30,8 +30,8 @@ pub fn list_images(dir: &Path) -> Result<Vec<PathBuf>> {
     Ok(images)
 }
 
-/// Given the list of profiles configured for the current screen count and
-/// the name of the profile that was last applied (if any), return the
+/// Given the list of profiles configured for the current display layout and
+/// the name of the wallpaper profile that was last applied (if any), return the
 /// *next* profile to apply, cycling forward in the order profiles appear in
 /// the config file and wrapping back to the start at the end.
 ///
@@ -47,14 +47,15 @@ pub fn next_profile<'a>(
         bail!("wallpaper profile list is empty");
     }
 
-    let next_index = match current_name.and_then(|name| profiles.iter().position(|p| p.name == name)) {
-        // Found the current profile in the list - advance to the next one,
-        // wrapping around with `%` once we pass the last index.
-        Some(current_index) => (current_index + 1) % profiles.len(),
-        // No recorded current profile (first run), or it no longer exists
-        // in the config (e.g. renamed/removed) - start from the beginning.
-        None => 0,
-    };
+    let next_index =
+        match current_name.and_then(|name| profiles.iter().position(|p| p.name == name)) {
+            // Found the current profile in the list - advance to the next one,
+            // wrapping around with `%` once we pass the last index.
+            Some(current_index) => (current_index + 1) % profiles.len(),
+            // No recorded current profile (first run), or it no longer exists
+            // in the config (e.g. renamed/removed) - start from the beginning.
+            None => 0,
+        };
 
     Ok(&profiles[next_index])
 }
@@ -63,7 +64,10 @@ pub fn next_profile<'a>(
 /// image per screen, in the order they're listed in the config.
 pub fn apply_profile(profile: &WallpaperProfile) -> Result<()> {
     if profile.images.is_empty() {
-        bail!("wallpaper profile '{}' has no images configured", profile.name);
+        bail!(
+            "wallpaper profile '{}' has no images configured",
+            profile.name
+        );
     }
 
     set_multiple(&profile.images)?;
@@ -136,6 +140,7 @@ mod tests {
     fn profile(name: &str) -> WallpaperProfile {
         WallpaperProfile {
             name: name.to_string(),
+            displays: vec!["work".to_string()],
             images: vec![PathBuf::from(format!("{name}.png"))],
             notification_image: None,
         }

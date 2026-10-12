@@ -21,10 +21,15 @@ fn cache_dir() -> Result<PathBuf> {
     Ok(base.join("deskctl"))
 }
 
-/// One state file per screen count, since the profile list (and therefore
-/// "current position") differs depending on how many screens are connected.
-fn state_file(screen_count: usize) -> Result<PathBuf> {
-    Ok(cache_dir()?.join(format!("wallpaper-state-{screen_count}")))
+/// One state file per display profile. Hex encoding keeps arbitrary profile
+/// names from changing the cache path or creating nested paths.
+fn wallpaper_state_file(display_name: &str) -> Result<PathBuf> {
+    let encoded_name: String = display_name
+        .as_bytes()
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
+    Ok(cache_dir()?.join(format!("wallpaper-state-{encoded_name}")))
 }
 
 /// One state file for the current display profile.
@@ -32,11 +37,9 @@ fn display_state_file() -> Result<PathBuf> {
     Ok(cache_dir()?.join("display-state"))
 }
 
-/// Read the name of the last-applied wallpaper profile for `screen_count`,
-/// if any has been recorded yet.
-///
-pub fn read_current_profile(screen_count: usize) -> Result<Option<String>> {
-    read_profile(&state_file(screen_count)?, "wallpaper")
+/// Read the name of the last-applied wallpaper profile for a display profile.
+pub fn read_current_profile(display_name: &str) -> Result<Option<String>> {
+    read_profile(&wallpaper_state_file(display_name)?, "wallpaper")
 }
 
 /// Read the name of the last-applied display profile, if any.
@@ -64,9 +67,13 @@ fn read_profile(path: &Path, profile_type: &str) -> Result<Option<String>> {
     }
 }
 
-/// Persist `profile_name` as the current wallpaper profile for `screen_count`.
-pub fn write_current_profile(screen_count: usize, profile_name: &str) -> Result<()> {
-    write_profile(&state_file(screen_count)?, profile_name, "wallpaper")
+/// Persist `profile_name` as the current wallpaper profile for a display profile.
+pub fn write_current_profile(display_name: &str, profile_name: &str) -> Result<()> {
+    write_profile(
+        &wallpaper_state_file(display_name)?,
+        profile_name,
+        "wallpaper",
+    )
 }
 
 /// Persist `profile_name` as the current display profile.

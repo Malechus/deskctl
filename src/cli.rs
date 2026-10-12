@@ -56,11 +56,11 @@ pub enum Command {
 
 #[derive(Subcommand)]
 pub enum WallpaperAction {
-    /// List wallpaper profiles available for the current number of connected screens
+    /// List wallpaper profiles compatible with the selected display profile
     List,
-    /// Advance to the next wallpaper profile (in configured order) matching the current screen count and apply it
+    /// Advance to the next wallpaper profile compatible with the selected display profile
     Next,
-    /// Apply a specific named wallpaper profile (must match the current screen count)
+    /// Apply a named wallpaper profile compatible with the selected display profile
     Apply { profile: String },
     /// Set a specific wallpaper file directly on every screen (bypasses profiles)
     Set { path: String },

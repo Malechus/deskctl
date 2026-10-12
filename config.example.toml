@@ -23,45 +23,32 @@ args = [
   "--output", "HDMI-1", "--primary", "--mode", "1920x1080", "--pos", "0x0",
 ]
 
-# Wallpaper profiles, grouped by the NUMBER OF CURRENTLY CONNECTED SCREENS
-# (as reported by `xrandr --query`). Each [[wallpapers.N]] block is one named
-# profile with an explicit, ordered list of image paths - one per screen, in
-# the same order xrandr reports connected outputs (check with
-# `deskctl display list`).
+# Wallpaper profiles link to one or more display profile names. Each
+# [[wallpapers]] block is one named profile with an explicit, ordered list
+# of image paths - one per active screen, in the same order xrandr applies
+# outputs (check with `deskctl display list`). A profile may be shared by
+# multiple layouts when those layouts use the same number of screens.
 #
-# `deskctl wallpaper next` cycles through the profiles for your current
-# screen count IN THE ORDER THEY APPEAR BELOW, wrapping back to the first
-# after the last one - never randomly. `deskctl wallpaper apply <name>` jumps
-# straight to a specific one.
-#
-# Example: two screens connected
-[[wallpapers.2]]
-name = "nature"
-images = [
-  "/home/malechus/Pictures/Wallpapers/nature/001.jpg",
-  "/home/malechus/Pictures/Wallpapers/nature/002.jpg",
-]
+# `deskctl wallpaper next` cycles in config order through profiles linked to
+# the currently selected display profile. `deskctl wallpaper apply <name>`
+# jumps straight to a compatible named profile.
+[[wallpapers]]
+name = "laptop-nature"
+displays = ["laptop-only"]
+images = ["/home/malechus/Pictures/Wallpapers/nature/001.jpg"]
 # Optional: shown as the icon in the desktop notification when this profile
-# is applied. Omit this line entirely (as the "dark" profile below does) to
-# send the notification without an image.
+# is applied. Omit this line to send a plain text notification.
 notification_image = "/home/malechus/Pictures/Wallpapers/nature/001.jpg"
 
-[[wallpapers.2]]
-name = "dark"
-images = [
-  "/home/malechus/Pictures/Wallpapers/dark/001.jpg",
-  "/home/malechus/Pictures/Wallpapers/dark/002.jpg",
-]
+[[wallpapers]]
+name = "docked-dark"
+displays = ["docked"]
+images = ["/home/malechus/Pictures/Wallpapers/dark/001.jpg"]
 
-# Example: four screens connected
-[[wallpapers.4]]
-name = "pinup"
-images = [
-  "/home/malechus/Pictures/Wallpapers/horizontal/044.png",
-  "/home/malechus/Pictures/Wallpapers/vertical/076.png",
-  "/home/malechus/Pictures/Wallpapers/horizontal/033.png",
-  "/home/malechus/Pictures/Wallpapers/vertical/078.png",
-]
+[[wallpapers]]
+name = "shared"
+displays = ["laptop-only", "docked"]
+images = ["/home/malechus/Pictures/Wallpapers/horizontal/044.png"]
 
 # Settings for the systemd timer installed by `deskctl --enable`. This whole
 # section - or just the "interval" line - can be omitted entirely, in which

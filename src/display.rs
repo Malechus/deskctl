@@ -113,15 +113,6 @@ pub fn list_monitors() -> Result<Vec<Monitor>> {
     Ok(monitors)
 }
 
-/// Count how many monitors are currently reported as "connected" by xrandr.
-/// This is what drives screen-count-based wallpaper profile selection - e.g.
-/// docking a laptop (2 screens) vs. undocked (1 screen) picks a different
-/// set of wallpaper profiles.
-pub fn count_connected_monitors() -> Result<usize> {
-    let monitors = list_monitors()?;
-    Ok(monitors.iter().filter(|m| m.connected).count())
-}
-
 /// Build a `DisplayProfile` that reproduces the monitor layout xrandr
 /// currently reports: each connected monitor keeps its current mode *and*
 /// rotation (or `--auto`, letting xrandr pick a sensible default, if no
@@ -153,6 +144,33 @@ pub fn build_detected_profile(monitors: &[Monitor]) -> DisplayProfile {
         name: "detected".to_string(),
         args,
     }
+}
+
+/// Count outputs that are configured on in an xrandr argument list.
+/// Each `--output NAME` starts a section that ends at the next `--output`;
+/// sections containing `--off` do not contribute to the screen count.
+pub fn active_output_count(profile: &DisplayProfile) -> usize {
+    let mut active_outputs = 0;
+    let mut reading_output = false;
+    let mut output_is_off = false;
+
+    for arg in &profile.args {
+        if arg == "--output" {
+            if reading_output && !output_is_off {
+                active_outputs += 1;
+            }
+            reading_output = true;
+            output_is_off = false;
+        } else if reading_output && arg == "--off" {
+            output_is_off = true;
+        }
+    }
+
+    if reading_output && !output_is_off {
+        active_outputs += 1;
+    }
+
+    active_outputs
 }
 
 /// Given the configured display profiles and the last profile applied,
@@ -229,5 +247,25 @@ mod tests {
     #[test]
     fn empty_profile_list_is_an_error() {
         assert!(next_profile(&[], None).is_err());
+    }
+
+    #[test]
+    fn counts_only_outputs_not_marked_off() {
+        let profile = DisplayProfile {
+            name: "work".to_string(),
+            args: vec![
+                "--output".to_string(),
+                "DP-1".to_string(),
+                "--mode".to_string(),
+                "1920x1080".to_string(),
+                "--output".to_string(),
+                "DP-2".to_string(),
+                "--off".to_string(),
+                "--output".to_string(),
+                "HDMI-1".to_string(),
+                "--auto".to_string(),
+            ],
+        };
+        assert_eq!(active_output_count(&profile), 2);
     }
 }

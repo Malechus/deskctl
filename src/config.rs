@@ -16,15 +16,10 @@ pub struct Config {
     #[serde(deserialize_with = "deserialize_display_profiles")]
     pub displays: Vec<DisplayProfile>,
 
-    /// Wallpaper profiles, grouped by *number of connected screens*.
-    /// The map key is the screen count as a string (TOML table keys are
-    /// always strings, e.g. `[[wallpapers.2]]`), and the value is an
-    /// *ordered* list of named profiles for that screen count. `deskctl
-    /// wallpaper next` walks through this list in order (wrapping back to
-    /// the start), remembering its position in a state file - it never
-    /// picks randomly.
+    /// Ordered wallpaper profiles, each explicitly linked to one or more
+    /// display profile names.
     #[serde(default)]
-    pub wallpapers: BTreeMap<String, Vec<WallpaperProfile>>,
+    pub wallpapers: Vec<WallpaperProfile>,
 
     /// Settings for the systemd timer that `deskctl --enable` installs.
     #[serde(default)]
@@ -118,13 +113,15 @@ where
 /// img3 img4`. There is no randomness here: the same profile always sets
 /// the same images, in the same screen order, every time it's applied.
 ///
-/// Profiles are declared as TOML array-of-tables (for example,
-/// `[[wallpapers.2]]`); their order in the file determines the cycling order.
+/// Profiles are declared as TOML array-of-tables (`[[wallpapers]]`); their
+/// order in the file determines the cycling order within each linked display.
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct WallpaperProfile {
     /// Profile name, used with `deskctl wallpaper apply <name>` and shown in
     /// notifications/state tracking.
     pub name: String,
+    /// Display profile names this wallpaper profile is compatible with.
+    pub displays: Vec<String>,
     /// Explicit image paths, one per screen, in the same order xrandr
     /// reports connected outputs (see `deskctl display list`).
     pub images: Vec<PathBuf>,
@@ -138,6 +135,17 @@ pub struct WallpaperProfile {
 }
 
 impl Config {
+    /// Iterate over wallpaper profiles linked to `display_name`, preserving
+    /// their order from the config file.
+    pub fn wallpapers_for_display(
+        &self,
+        display_name: &str,
+    ) -> impl Iterator<Item = &WallpaperProfile> {
+        self.wallpapers
+            .iter()
+            .filter(move |profile| profile.displays.iter().any(|name| name == display_name))
+    }
+
     /// Load config from an explicit path, or fall back to the default
     /// `$XDG_CONFIG_HOME/deskctl/config.toml` location.
     pub fn load(explicit_path: Option<&str>) -> Result<Self> {
@@ -149,7 +157,9 @@ impl Config {
         let mut config: Config = toml::from_str(&raw)
             .with_context(|| format!("failed to parse config file at {}", path.display()))?;
 
-        for profile in config.wallpapers.values_mut().flatten() {
+        config.validate()?;
+
+        for profile in &mut config.wallpapers {
             for image in &mut profile.images {
                 *image = expand_path(image)?;
             }
@@ -159,6 +169,49 @@ impl Config {
         }
 
         Ok(config)
+    }
+
+    fn validate(&self) -> Result<()> {
+        let mut wallpaper_names = std::collections::HashSet::new();
+
+        for profile in &self.wallpapers {
+            if !wallpaper_names.insert(&profile.name) {
+                bail!("duplicate wallpaper profile name '{}'", profile.name);
+            }
+            if profile.displays.is_empty() {
+                bail!(
+                    "wallpaper profile '{}' must list at least one compatible display in `displays`",
+                    profile.name
+                );
+            }
+
+            for display_name in &profile.displays {
+                let Some(display_profile) = self
+                    .displays
+                    .iter()
+                    .find(|display| display.name == *display_name)
+                else {
+                    bail!(
+                        "wallpaper profile '{}' references unknown display profile '{}'",
+                        profile.name,
+                        display_name
+                    );
+                };
+
+                let screen_count = display::active_output_count(display_profile);
+                if profile.images.len() != screen_count {
+                    log::warn!(
+                        "wallpaper profile '{}' has {} image(s), but linked display profile '{}' enables {} screen(s)",
+                        profile.name,
+                        profile.images.len(),
+                        display_name,
+                        screen_count
+                    );
+                }
+            }
+        }
+
+        Ok(())
     }
 }
 
@@ -271,14 +324,13 @@ pub fn generate(explicit_path: Option<&str>, wallpaper_dir: Option<&Path>) -> Re
 /// reflects the machine deskctl is actually running on right now (built
 /// from a live `xrandr --query`, via `display::build_detected_profile`) -
 /// applying it immediately after generation is always safe. The
-/// `wallpapers` map depends on whether a wallpaper image directory was
+/// `wallpapers` list depends on whether a wallpaper image directory was
 /// supplied:
 /// - `Some(dir)`: real images found in `dir` are split into two profiles
-///   ("set-1", "set-2"), each assigning one image per *currently connected*
-///   screen, keyed under the real detected screen count.
-/// - `None`: falls back to the previous placeholder behavior - example
-///   profiles under screen counts 1 and 2 with `CHANGE_ME` paths you edit
-///   by hand.
+///   ("set-1", "set-2"), each assigning one image per currently connected
+///   screen and linked to the generated "detected" display profile.
+/// - `None`: writes placeholder profiles linked to "detected" that you
+///   edit by hand.
 fn build_config(wallpaper_dir: Option<&Path>) -> Result<Config> {
     let monitors = display::list_monitors()
         .context("failed to query xrandr to build a display profile for --genconfig")?;
@@ -287,15 +339,17 @@ fn build_config(wallpaper_dir: Option<&Path>) -> Result<Config> {
     let displays = vec![display::build_detected_profile(&monitors)];
 
     let wallpapers = match wallpaper_dir {
-        Some(dir) => real_wallpaper_profiles(dir, screen_count)?,
-        None => placeholder_wallpaper_profiles(),
+        Some(dir) => real_wallpaper_profiles(dir, "detected", screen_count)?,
+        None => placeholder_wallpaper_profiles("detected", screen_count),
     };
 
-    Ok(Config {
+    let config = Config {
         displays,
         wallpapers,
         timer: TimerConfig::default(),
-    })
+    };
+    config.validate()?;
+    Ok(config)
 }
 
 /// Build two wallpaper profiles ("set-1" and "set-2") from real image files
@@ -304,7 +358,7 @@ fn build_config(wallpaper_dir: Option<&Path>) -> Result<Config> {
 /// images, we cycle back through the list with `%` rather than failing -
 /// good enough for a generated starting point, since you can always edit
 /// the file afterward.
-fn real_wallpaper_profiles(dir: &Path, screen_count: usize) -> Result<BTreeMap<String, Vec<WallpaperProfile>>> {
+fn real_wallpaper_profiles(dir: &Path, display_name: &str, screen_count: usize) -> Result<Vec<WallpaperProfile>> {
     let images = wallpaper::list_images(dir)
         .with_context(|| format!("failed to list images in --wallpaper-dir {}", dir.display()))?;
 
@@ -317,56 +371,43 @@ fn real_wallpaper_profiles(dir: &Path, screen_count: usize) -> Result<BTreeMap<S
 
     let build_profile = |name: &str, start: usize| WallpaperProfile {
         name: name.to_string(),
+        displays: vec![display_name.to_string()],
         images: (0..per_profile)
             .map(|i| images[(start + i) % images.len()].clone())
             .collect(),
         notification_image: images.first().cloned(),
     };
 
-    let mut wallpapers = BTreeMap::new();
-    wallpapers.insert(
-        screen_count.to_string(),
-        vec![
-            build_profile("set-1", 0),
-            build_profile("set-2", per_profile),
-        ],
-    );
-    Ok(wallpapers)
+    Ok(vec![
+        build_profile("set-1", 0),
+        build_profile("set-2", per_profile),
+    ])
 }
 
 /// Placeholder wallpaper profiles used when `--genconfig` is run without a
-/// `--wallpaper-dir` - the previous, hand-edit-required behavior.
-fn placeholder_wallpaper_profiles() -> BTreeMap<String, Vec<WallpaperProfile>> {
-    let mut wallpapers = BTreeMap::new();
-    wallpapers.insert(
-        "1".to_string(),
-        vec![
-            WallpaperProfile {
-                name: "single-nature".to_string(),
-                images: vec![PathBuf::from("/home/CHANGE_ME/Pictures/Wallpapers/nature/001.jpg")],
-                notification_image: Some(PathBuf::from(
-                    "/home/CHANGE_ME/Pictures/Wallpapers/nature/001.jpg",
-                )),
-            },
-            WallpaperProfile {
-                name: "single-dark".to_string(),
-                images: vec![PathBuf::from("/home/CHANGE_ME/Pictures/Wallpapers/dark/001.jpg")],
-                notification_image: None,
-            },
-        ],
-    );
-    wallpapers.insert(
-        "2".to_string(),
-        vec![WallpaperProfile {
-            name: "dual-nature".to_string(),
-            images: vec![
-                PathBuf::from("/home/CHANGE_ME/Pictures/Wallpapers/nature/001.jpg"),
-                PathBuf::from("/home/CHANGE_ME/Pictures/Wallpapers/nature/002.jpg"),
-            ],
+/// `--wallpaper-dir` - example profiles you edit by hand.
+fn placeholder_wallpaper_profiles(display_name: &str, screen_count: usize) -> Vec<WallpaperProfile> {
+    let paths = [
+        "/home/CHANGE_ME/Pictures/Wallpapers/nature/001.jpg",
+        "/home/CHANGE_ME/Pictures/Wallpapers/nature/002.jpg",
+    ];
+    let images = (0..screen_count.max(1))
+        .map(|index| PathBuf::from(paths[index % paths.len()]))
+        .collect::<Vec<_>>();
+    vec![
+        WallpaperProfile {
+            name: "nature".to_string(),
+            displays: vec![display_name.to_string()],
+            images: images.clone(),
+            notification_image: images.first().cloned(),
+        },
+        WallpaperProfile {
+            name: "dark".to_string(),
+            displays: vec![display_name.to_string()],
+            images,
             notification_image: None,
-        }],
-    );
-    wallpapers
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -424,6 +465,94 @@ mod tests {
         );
 
         assert!(parsed.is_err());
+    }
+
+    #[test]
+    fn wallpaper_profile_must_reference_configured_displays() {
+        let config: Config = toml::from_str(
+            r#"
+            [[displays]]
+            name = "work"
+            args = ["--output", "DP-1", "--auto"]
+
+            [[wallpapers]]
+            name = "work-wallpaper"
+            displays = ["missing"]
+            images = ["one.jpg"]
+            "#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn wallpaper_profile_requires_display_links() {
+        let config: Config = toml::from_str(
+            r#"
+            [[displays]]
+            name = "work"
+            args = ["--output", "DP-1", "--auto"]
+
+            [[wallpapers]]
+            name = "unlinked"
+            displays = []
+            images = ["one.jpg"]
+            "#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn wallpaper_profiles_can_link_to_multiple_displays() {
+        let config: Config = toml::from_str(
+            r#"
+            [[displays]]
+            name = "work"
+            args = ["--output", "DP-1", "--auto"]
+
+            [[displays]]
+            name = "personal"
+            args = ["--output", "HDMI-1", "--auto"]
+
+            [[wallpapers]]
+            name = "shared"
+            displays = ["work", "personal"]
+            images = ["one.jpg"]
+            "#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.wallpapers_for_display("work").count(), 1);
+        assert_eq!(config.wallpapers_for_display("personal").count(), 1);
+    }
+
+    #[test]
+    fn example_config_has_valid_display_links() {
+        let config: Config = toml::from_str(include_str!("../config.example.toml")).unwrap();
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn image_count_mismatch_is_a_warning_not_a_config_error() {
+        let config: Config = toml::from_str(
+            r#"
+            [[displays]]
+            name = "work"
+            args = ["--output", "DP-1", "--auto", "--output", "DP-2", "--auto"]
+
+            [[wallpapers]]
+            name = "mismatched"
+            displays = ["work"]
+            images = ["one.jpg"]
+            "#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_ok());
     }
 
     fn expand(p: &str) -> Result<PathBuf> {

@@ -56,11 +56,10 @@ deskctl --genconfig --wallpaper-dir ~/Pictures/Wallpapers/horizontal
 ```
 
 This builds two real, working wallpaper profiles ("set-1", "set-2") from the
-image files actually found in that directory, keyed to your machine's
-*current* connected screen count - each profile assigns one distinct image
-per screen. Without `--wallpaper-dir`, `--genconfig` instead writes
-placeholder wallpaper profiles (with `CHANGE_ME` paths) for you to edit by
-hand.
+image files actually found in that directory, linked to the generated
+"detected" display profile. Each profile assigns one image per active screen.
+Without `--wallpaper-dir`, `--genconfig` instead writes placeholder wallpaper
+profiles (with `CHANGE_ME` paths) for you to edit by hand.
 
 (Fails if the target config file already exists, so it won't clobber a
 config you've already customized.) Or copy `config.example.toml` yourself.
@@ -72,19 +71,23 @@ Either way, the resulting file has:
   end. The last-applied profile is stored at
   `$XDG_CACHE_HOME/deskctl/display-state`. Older `[displays.<name>]` tables
   are still accepted; they cycle alphabetically by profile name.
-- `[[wallpapers.<screen-count>]]`: named wallpaper profiles, grouped by how
-  many screens `xrandr` currently reports as connected. Each profile has an
-  explicit, ordered `images` list - one path per screen, applied in that
-  order (matching xrandr's output order). `deskctl wallpaper next` cycles
-  through the profiles for your *current* screen count **in the order they
-  appear in the config**, wrapping back to the first after the last -
-  no randomness. It remembers its position in
-  `$XDG_CACHE_HOME/deskctl/wallpaper-state-<count>` so repeated runs (e.g.
-  from a systemd timer) keep advancing. `deskctl wallpaper apply <name>`
-  jumps straight to a specific profile and also updates that saved position.
-  An optional `notification_image` path can also be set per profile - it's
-  passed to `notify-send -i` as the notification's icon; omit it for a
-  plain text notification.
+- `[[wallpapers]]`: named wallpaper profiles, each with a `displays` list of
+  compatible display profile names and an explicit, ordered `images` list -
+  one path per active screen, applied in order. A wallpaper profile can be
+  linked to multiple display profiles when they use the same number of
+  screens. `deskctl wallpaper next` cycles through compatible profiles in
+  config order; `deskctl wallpaper apply <name>` applies a named compatible
+  profile. The last-applied wallpaper is tracked separately for each display
+  profile in `$XDG_CACHE_HOME/deskctl/`. Config loading fails if a wallpaper
+  references a display profile that does not exist, and logs a warning when
+  an image count differs from the number of active outputs in a linked
+  display profile. An optional `notification_image` path is passed to
+  `notify-send -i` as the notification icon; omit it for a plain text
+  notification.
+
+For example, use `displays = ["work"]` to link a wallpaper set only to the
+`work` layout, or `displays = ["work", "personal"]` to share that set across
+both layouts.
 
 Image paths (and `--config`, `--wallpaper-dir`, `wallpaper set`) support a
 leading `~` plus `$VAR` / `${VAR}` environment variables, e.g.
@@ -97,7 +100,7 @@ user manager are available (see `systemctl --user import-environment`).
 Running `deskctl` with no arguments is the same as `deskctl wallpaper next`.
 
 ```sh
-deskctl wallpaper list             # show wallpaper profiles (and cycle order) for the current screen count
+deskctl wallpaper list             # show wallpaper profiles for the selected display profile
 deskctl wallpaper next              # advance to the next profile in sequence and apply it
 deskctl wallpaper apply <profile>  # jump straight to a specific named wallpaper profile
 deskctl wallpaper set <path>        # set one literal image file on every screen
