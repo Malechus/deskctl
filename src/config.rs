@@ -10,9 +10,11 @@ use crate::{display, wallpaper};
 /// The root of our config.toml file.
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Config {
-    /// Named xrandr display profiles, e.g. "docked" -> DisplayProfile.
+    /// Ordered named xrandr display profiles. The order determines how
+    /// `deskctl display next` cycles through them.
     #[serde(default)]
-    pub displays: BTreeMap<String, DisplayProfile>,
+    #[serde(deserialize_with = "deserialize_display_profiles")]
+    pub displays: Vec<DisplayProfile>,
 
     /// Wallpaper profiles, grouped by *number of connected screens*.
     /// The map key is the screen count as a string (TOML table keys are
@@ -57,12 +59,57 @@ impl Default for TimerConfig {
 /// A single named xrandr profile: a list of raw arguments to pass to xrandr.
 /// Keeping this as raw args (rather than trying to model every xrandr flag)
 /// keeps the tool flexible - you write the xrandr invocation you'd type by
-/// hand, and deskctl just replays it.
+/// hand, and deskctl just replays it. Profiles in the `[[displays]]` array
+/// retain their config-file order for `deskctl display next`.
 #[derive(Deserialize, Serialize, Debug)]
 pub struct DisplayProfile {
+    /// Profile name, used with `deskctl display apply <name>`.
+    pub name: String,
     /// Full argument list passed to `xrandr`, e.g.
     /// ["--output", "eDP-1", "--mode", "1920x1080", "--output", "HDMI-1", "--off"]
     pub args: Vec<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum DisplayProfilesConfig {
+    Ordered(Vec<DisplayProfile>),
+    Legacy(BTreeMap<String, LegacyDisplayProfile>),
+}
+
+#[derive(Deserialize)]
+struct LegacyDisplayProfile {
+    args: Vec<String>,
+}
+
+fn deserialize_display_profiles<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Vec<DisplayProfile>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let profiles = match DisplayProfilesConfig::deserialize(deserializer)? {
+        DisplayProfilesConfig::Ordered(profiles) => profiles,
+        DisplayProfilesConfig::Legacy(profiles) => profiles
+            .into_iter()
+            .map(|(name, profile)| DisplayProfile {
+                name,
+                args: profile.args,
+            })
+            .collect(),
+    };
+
+    let mut names = std::collections::HashSet::new();
+    for profile in &profiles {
+        if !names.insert(&profile.name) {
+            return Err(serde::de::Error::custom(format!(
+                "duplicate display profile name '{}'",
+                profile.name
+            )));
+        }
+    }
+
+    Ok(profiles)
 }
 
 /// A single named wallpaper profile: an explicit, ordered list of image
@@ -220,7 +267,7 @@ pub fn generate(explicit_path: Option<&str>, wallpaper_dir: Option<&Path>) -> Re
     Ok(path)
 }
 
-/// The config content written by `--genconfig`. The `displays` map always
+/// The config content written by `--genconfig`. The `displays` list always
 /// reflects the machine deskctl is actually running on right now (built
 /// from a live `xrandr --query`, via `display::build_detected_profile`) -
 /// applying it immediately after generation is always safe. The
@@ -237,8 +284,7 @@ fn build_config(wallpaper_dir: Option<&Path>) -> Result<Config> {
         .context("failed to query xrandr to build a display profile for --genconfig")?;
     let screen_count = monitors.iter().filter(|m| m.connected).count();
 
-    let mut displays = BTreeMap::new();
-    displays.insert("detected".to_string(), display::build_detected_profile(&monitors));
+    let displays = vec![display::build_detected_profile(&monitors)];
 
     let wallpapers = match wallpaper_dir {
         Some(dir) => real_wallpaper_profiles(dir, screen_count)?,
@@ -326,6 +372,59 @@ fn placeholder_wallpaper_profiles() -> BTreeMap<String, Vec<WallpaperProfile>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ordered_display_profiles_keep_config_order() {
+        let config: Config = toml::from_str(
+            r#"
+            [[displays]]
+            name = "work"
+            args = ["--output", "DP-1", "--auto"]
+
+            [[displays]]
+            name = "home"
+            args = ["--output", "HDMI-1", "--auto"]
+            "#,
+        )
+        .unwrap();
+
+        let names: Vec<_> = config.displays.iter().map(|profile| profile.name.as_str()).collect();
+        assert_eq!(names, ["work", "home"]);
+    }
+
+    #[test]
+    fn legacy_display_tables_are_still_loaded() {
+        let config: Config = toml::from_str(
+            r#"
+            [displays.work]
+            args = ["--output", "DP-1", "--auto"]
+
+            [displays.home]
+            args = ["--output", "HDMI-1", "--auto"]
+            "#,
+        )
+        .unwrap();
+
+        let names: Vec<_> = config.displays.iter().map(|profile| profile.name.as_str()).collect();
+        assert_eq!(names, ["home", "work"]);
+    }
+
+    #[test]
+    fn duplicate_display_names_are_rejected() {
+        let parsed = toml::from_str::<Config>(
+            r#"
+            [[displays]]
+            name = "same"
+            args = ["--output", "DP-1", "--auto"]
+
+            [[displays]]
+            name = "same"
+            args = ["--output", "HDMI-1", "--auto"]
+            "#,
+        );
+
+        assert!(parsed.is_err());
+    }
 
     fn expand(p: &str) -> Result<PathBuf> {
         expand_path_with(Path::new(p), |name| match name {

@@ -68,8 +68,10 @@ pub enum WallpaperAction {
 
 #[derive(Subcommand)]
 pub enum DisplayAction {
-    /// List currently connected monitors (via `xrandr --query`)
+    /// List configured display profiles and currently connected monitors
     List,
+    /// Advance to the next display profile in configured order and apply it
+    Next,
     /// Apply a named display profile from the config file
     Apply { profile: String },
 }

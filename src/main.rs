@@ -155,6 +155,16 @@ fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
 fn handle_display(action: DisplayAction, config: &Config) -> Result<()> {
     match action {
         DisplayAction::List => {
+            if config.displays.is_empty() {
+                println!("no display profiles configured");
+            } else {
+                println!("display profiles in cycle order:");
+                for profile in &config.displays {
+                    println!("  {}", profile.name);
+                }
+            }
+
+            println!("connected monitors:");
             let monitors = display::list_monitors()?;
             for m in monitors {
                 let mode = m.current_mode.as_deref().unwrap_or("-");
@@ -166,14 +176,28 @@ fn handle_display(action: DisplayAction, config: &Config) -> Result<()> {
                 );
             }
         }
+        DisplayAction::Next => {
+            let current_name = state::read_current_display_profile()?;
+            let next = display::next_profile(&config.displays, current_name.as_deref())
+                .with_context(|| {
+                    "no display profiles configured - add [[displays]] entries to your config"
+                })?;
+            let next_name = next.name.clone();
+
+            display::apply_profile(&next_name, next)?;
+            state::write_current_display_profile(&next_name)?;
+
+            println!("applied display profile: {next_name}");
+        }
         DisplayAction::Apply { profile } => {
-            let Some(p) = config.displays.get(&profile) else {
+            let Some(p) = config.displays.iter().find(|p| p.name == profile) else {
                 anyhow::bail!(
                     "no display profile named '{profile}' found in config (available: {:?})",
-                    config.displays.keys().collect::<Vec<_>>()
+                    config.displays.iter().map(|p| &p.name).collect::<Vec<_>>()
                 );
             };
             display::apply_profile(&profile, p)?;
+            state::write_current_display_profile(&profile)?;
             println!("applied display profile: {profile}");
         }
     }

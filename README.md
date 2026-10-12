@@ -44,7 +44,7 @@ deskctl --genconfig                      # writes to $XDG_CONFIG_HOME/deskctl/co
 deskctl --genconfig=/custom/path.toml    # or write to a custom path
 ```
 
-This always builds a `[displays.detected]` profile from a live `xrandr
+This always builds a `[[displays]]` profile named "detected" from a live `xrandr
 --query` of *your machine's* current monitor layout (correct mode names and
 rotations included), so it's safe to apply immediately after generating.
 
@@ -66,8 +66,12 @@ hand.
 config you've already customized.) Or copy `config.example.toml` yourself.
 Either way, the resulting file has:
 
-- `[displays.<name>]`: named `xrandr` argument lists, applied with
-  `deskctl display apply <name>`
+- `[[displays]]`: named `xrandr` profiles, applied with
+  `deskctl display apply <name>`. Entries stay in config-file order;
+  `deskctl display next` cycles through them in that order, wrapping at the
+  end. The last-applied profile is stored at
+  `$XDG_CACHE_HOME/deskctl/display-state`. Older `[displays.<name>]` tables
+  are still accepted; they cycle alphabetically by profile name.
 - `[[wallpapers.<screen-count>]]`: named wallpaper profiles, grouped by how
   many screens `xrandr` currently reports as connected. Each profile has an
   explicit, ordered `images` list - one path per screen, applied in that
@@ -97,8 +101,9 @@ deskctl wallpaper list             # show wallpaper profiles (and cycle order) f
 deskctl wallpaper next              # advance to the next profile in sequence and apply it
 deskctl wallpaper apply <profile>  # jump straight to a specific named wallpaper profile
 deskctl wallpaper set <path>        # set one literal image file on every screen
-deskctl display list               # show connected monitors (xrandr --query)
-deskctl display apply <profile>    # apply a named xrandr profile from config
+deskctl display list               # show configured display profiles and connected monitors
+deskctl display next               # advance to and apply the next display profile
+deskctl display apply <profile>    # apply a named xrandr profile and update cycle position
 ```
 
 ## Running on a timer (systemd)

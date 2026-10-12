@@ -149,10 +149,30 @@ pub fn build_detected_profile(monitors: &[Monitor]) -> DisplayProfile {
             args.push("--off".to_string());
         }
     }
-    DisplayProfile { args }
+    DisplayProfile {
+        name: "detected".to_string(),
+        args,
+    }
 }
 
+/// Given the configured display profiles and the last profile applied,
+/// return the next profile in config-file order, wrapping at the end.
+pub fn next_profile<'a>(
+    profiles: &'a [DisplayProfile],
+    current_name: Option<&str>,
+) -> Result<&'a DisplayProfile> {
+    if profiles.is_empty() {
+        bail!("display profile list is empty");
+    }
 
+    let next_index =
+        match current_name.and_then(|name| profiles.iter().position(|p| p.name == name)) {
+            Some(current_index) => (current_index + 1) % profiles.len(),
+            None => 0,
+        };
+
+    Ok(&profiles[next_index])
+}
 
 pub fn apply_profile(name: &str, profile: &DisplayProfile) -> Result<()> {
     log::info!("applying display profile '{name}': xrandr {:?}", profile.args);
@@ -167,4 +187,47 @@ pub fn apply_profile(name: &str, profile: &DisplayProfile) -> Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn profile(name: &str) -> DisplayProfile {
+        DisplayProfile {
+            name: name.to_string(),
+            args: vec![
+                "--output".to_string(),
+                "DP-1".to_string(),
+                "--auto".to_string(),
+            ],
+        }
+    }
+
+    #[test]
+    fn first_run_picks_first_profile() {
+        let profiles = vec![profile("home"), profile("work")];
+        assert_eq!(next_profile(&profiles, None).unwrap().name, "home");
+    }
+
+    #[test]
+    fn advances_and_wraps_in_order() {
+        let profiles = vec![profile("home"), profile("work")];
+        assert_eq!(next_profile(&profiles, Some("home")).unwrap().name, "work");
+        assert_eq!(next_profile(&profiles, Some("work")).unwrap().name, "home");
+    }
+
+    #[test]
+    fn unknown_current_profile_restarts_at_first() {
+        let profiles = vec![profile("home"), profile("work")];
+        assert_eq!(
+            next_profile(&profiles, Some("removed")).unwrap().name,
+            "home"
+        );
+    }
+
+    #[test]
+    fn empty_profile_list_is_an_error() {
+        assert!(next_profile(&[], None).is_err());
+    }
 }

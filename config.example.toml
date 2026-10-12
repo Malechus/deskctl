@@ -7,15 +7,17 @@
 # Or copy this file yourself to $XDG_CONFIG_HOME/deskctl/config.toml
 # (usually ~/.config/deskctl/config.toml) and edit it.
 
-# Named xrandr display profiles. Each key becomes a name you pass to
-# `deskctl display apply <name>`. The "args" list is exactly what you'd type
-# after `xrandr` on the command line - run `deskctl display list` (or
-# `xrandr --query`) first to see your actual output names (e.g. eDP-1,
-# HDMI-1, DP-1).
-[displays.laptop-only]
+# Named xrandr display profiles. The order of these [[displays]] entries is
+# the cycle order used by `deskctl display next`. The "args" list is exactly
+# what you'd type after `xrandr` on the command line - run `deskctl display
+# list` (or `xrandr --query`) first to see your actual output names (e.g.
+# eDP-1, HDMI-1, DP-1).
+[[displays]]
+name = "laptop-only"
 args = ["--output", "eDP-1", "--auto", "--output", "HDMI-1", "--off"]
 
-[displays.docked]
+[[displays]]
+name = "docked"
 args = [
   "--output", "eDP-1", "--off",
   "--output", "HDMI-1", "--primary", "--mode", "1920x1080", "--pos", "0x0",
