@@ -103,22 +103,7 @@ fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
         }
         WallpaperAction::Next => {
             let display_name = active_display_name(config)?;
-            let profiles: Vec<_> = config.wallpapers_for_display(&display_name).collect();
-            let applicable: Vec<_> = profiles.into_iter().cloned().collect();
-            if applicable.is_empty() {
-                anyhow::bail!(
-                    "no wallpaper profiles configured for display '{display_name}' - add a [[wallpapers]] entry with displays = [\"{display_name}\"]"
-                );
-            }
-
-            let current_name = state::read_current_profile(&display_name)?;
-            let next = wallpaper::next_profile(&applicable, current_name.as_deref())?;
-            let next_name = next.name.clone();
-
-            wallpaper::apply_profile(next)?;
-            state::write_current_profile(&display_name, &next_name)?;
-
-            println!("applied wallpaper profile '{next_name}' for display '{display_name}'");
+            apply_next_wallpaper(config, &display_name)?;
         }
         WallpaperAction::Apply { profile } => {
             let display_name = active_display_name(config)?;
@@ -142,6 +127,37 @@ fn handle_wallpaper(action: WallpaperAction, config: &Config) -> Result<()> {
         }
     }
     Ok(())
+}
+
+fn apply_next_wallpaper(config: &Config, display_name: &str) -> Result<()> {
+    let applicable: Vec<_> = config
+        .wallpapers_for_display(display_name)
+        .cloned()
+        .collect();
+    if applicable.is_empty() {
+        anyhow::bail!(
+            "no wallpaper profiles configured for display '{display_name}' - add a [[wallpapers]] entry with displays = [\"{display_name}\"]"
+        );
+    }
+
+    let current_name = state::read_current_profile(display_name)?;
+    let next = wallpaper::next_profile(&applicable, current_name.as_deref())?;
+    let next_name = next.name.clone();
+
+    wallpaper::apply_profile(next)?;
+    state::write_current_profile(display_name, &next_name)?;
+
+    println!("applied wallpaper profile '{next_name}' for display '{display_name}'");
+    Ok(())
+}
+
+/// Called after the display layout changes; a missing wallpaper match is not
+/// fatal because the display change itself already succeeded.
+fn refresh_wallpaper_for_display(config: &Config, display_name: &str) {
+    if let Err(err) = apply_next_wallpaper(config, display_name) {
+        log::warn!("display applied, but wallpaper was not updated: {err:#}");
+        eprintln!("warning: wallpaper was not updated: {err:#}");
+    }
 }
 
 fn active_display_name(config: &Config) -> Result<String> {
@@ -200,6 +216,7 @@ fn handle_display(action: DisplayAction, config: &Config) -> Result<()> {
             state::write_current_display_profile(&next_name)?;
 
             println!("applied display profile: {next_name}");
+            refresh_wallpaper_for_display(config, &next_name);
         }
         DisplayAction::Apply { profile } => {
             let Some(p) = config.displays.iter().find(|p| p.name == profile) else {
@@ -211,6 +228,7 @@ fn handle_display(action: DisplayAction, config: &Config) -> Result<()> {
             display::apply_profile(&profile, p)?;
             state::write_current_display_profile(&profile)?;
             println!("applied display profile: {profile}");
+            refresh_wallpaper_for_display(config, &profile);
         }
     }
     Ok(())
